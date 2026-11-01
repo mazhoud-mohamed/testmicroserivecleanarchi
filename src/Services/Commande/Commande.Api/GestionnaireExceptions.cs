@@ -1,6 +1,7 @@
 using Commande.Application.Abstractions;
 using Commande.Domain.Common;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Commande.Api;
 
@@ -13,6 +14,7 @@ public class GestionnaireExceptions(IProblemDetailsService problems, ILogger<Ges
     {
         var status = ex switch
         {
+            ValidationRequeteException => StatusCodes.Status400BadRequest,
             NonTrouveException => StatusCodes.Status404NotFound,
             DomainException => StatusCodes.Status422UnprocessableEntity,
             _ => 0
@@ -20,15 +22,27 @@ public class GestionnaireExceptions(IProblemDetailsService problems, ILogger<Ges
         if (status == 0) return false; // exception inattendue : laissée au comportement par défaut (500)
 
         // Pas de ex en premier argument : ce n'est pas un bug, on évite la pile d'appels dans les logs.
-        logger.LogWarning("{Methode} {Chemin} refusé ({StatutHttp}) : {Raison}",
-            ctx.Request.Method, ctx.Request.Path, status, ex.Message);
+        ProblemDetails details;
+        if (ex is ValidationRequeteException validation)
+        {
+            // {@Erreurs} : le @ demande à Serilog de sérialiser le dictionnaire (champ -> messages).
+            logger.LogWarning("{Methode} {Chemin} refusé ({StatutHttp}) : {Raison} {@Erreurs}",
+                ctx.Request.Method, ctx.Request.Path, status, ex.Message, validation.Erreurs);
+            details = new ValidationProblemDetails(validation.Erreurs) { Status = status, Title = ex.Message };
+        }
+        else
+        {
+            logger.LogWarning("{Methode} {Chemin} refusé ({StatutHttp}) : {Raison}",
+                ctx.Request.Method, ctx.Request.Path, status, ex.Message);
+            details = new ProblemDetails { Status = status, Title = ex.Message };
+        }
 
         ctx.Response.StatusCode = status;
         return await problems.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = ctx,
             Exception = ex,
-            ProblemDetails = { Status = status, Title = ex.Message }
+            ProblemDetails = details
         });
     }
 }

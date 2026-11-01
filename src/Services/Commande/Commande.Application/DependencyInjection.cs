@@ -1,5 +1,6 @@
 using Commande.Application.Abstractions;
 using Commande.Application.Decorateurs;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Commande.Application;
@@ -15,7 +16,11 @@ public static class DependencyInjection
             .AsImplementedInterfaces()
             .WithScopedLifetime());
 
-        // Chaque IHandler<,> résolu sera enveloppé par le décorateur de logs.
+        // Enregistre tous les validateurs FluentValidation de cet assembly.
+        services.AddValidatorsFromAssemblyContaining<IHandler<object, object>>();
+
+        // Le dernier Decorate est le plus extérieur : logs -> validation -> handler.
+        services.Decorate(typeof(IHandler<,>), typeof(HandlerAvecValidation<,>));
         services.Decorate(typeof(IHandler<,>), typeof(HandlerAvecLogs<,>));
         return services;
     }
