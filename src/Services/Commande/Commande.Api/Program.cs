@@ -2,8 +2,13 @@ using Commande.Api;
 using Commande.Application;
 using Commande.Infrastructure;
 using Commande.Infrastructure.Persistence;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Serilog remplace le fournisseur de logs par défaut ; sa config est lue dans la section "Serilog".
+builder.Host.UseSerilog((context, configuration) =>
+    configuration.ReadFrom.Configuration(context.Configuration));
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
