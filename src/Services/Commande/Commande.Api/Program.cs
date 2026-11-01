@@ -19,6 +19,9 @@ builder.Services.AddExceptionHandler<GestionnaireExceptions>();
 
 var app = builder.Build();
 
+// Une ligne de log par requête HTTP (méthode, route, statut, durée).
+app.UseSerilogRequestLogging();
+
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
