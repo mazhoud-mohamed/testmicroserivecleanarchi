@@ -1,8 +1,9 @@
+using Commande.Domain.Commandes.Evenements;
 using Commande.Domain.Common;
 
 namespace Commande.Domain.Commandes;
 
-public class Commande
+public class Commande : AggregateRoot
 {
     private readonly List<LigneCommande> _lignes = [];
 
@@ -37,6 +38,7 @@ public class Commande
         VerifierEnAttente();
         if (_lignes.Count == 0) throw new DomainException("Impossible de confirmer une commande sans ligne.");
         Statut = StatutCommande.Confirmee;
+        AjouterEvenement(new CommandeConfirmee(Id, ClientId, MontantTotal));
     }
 
     public void Expedier()
@@ -44,6 +46,7 @@ public class Commande
         if (Statut != StatutCommande.Confirmee)
             throw new DomainException("Seule une commande confirmée peut être expédiée.");
         Statut = StatutCommande.Expediee;
+        AjouterEvenement(new CommandeExpediee(Id, ClientId));
     }
 
     public void Annuler()
@@ -51,6 +54,7 @@ public class Commande
         if (Statut is StatutCommande.Expediee or StatutCommande.Annulee)
             throw new DomainException($"Impossible d'annuler une commande {Statut}.");
         Statut = StatutCommande.Annulee;
+        AjouterEvenement(new CommandeAnnulee(Id, ClientId));
     }
 
     private void VerifierEnAttente()

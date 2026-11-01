@@ -1,5 +1,6 @@
 using Commande.Application.Abstractions;
 using Commande.Application.Decorateurs;
+using Commande.Application.Evenements;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,6 +16,14 @@ public static class DependencyInjection
             .AddClasses(c => c.AssignableTo(typeof(IHandler<,>)), publicOnly: false)
             .AsImplementedInterfaces()
             .WithScopedLifetime());
+
+        // Enregistre automatiquement tous les IDomainEventHandler<> et le répartiteur d'événements.
+        services.Scan(scan => scan
+            .FromAssemblyOf<IHandler<object, object>>()
+            .AddClasses(c => c.AssignableTo(typeof(IDomainEventHandler<>)), publicOnly: false)
+            .AsImplementedInterfaces()
+            .WithScopedLifetime());
+        services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 
         // Enregistre tous les validateurs FluentValidation de cet assembly.
         services.AddValidatorsFromAssemblyContaining<IHandler<object, object>>();
