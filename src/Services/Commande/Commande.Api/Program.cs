@@ -24,6 +24,7 @@ app.UseExceptionHandler();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Commande API v1"));
 
     // Crée la base et les tables si elles n'existent pas (pas de migrations pour l'instant).
     using var scope = app.Services.CreateScope();
