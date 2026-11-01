@@ -1,3 +1,4 @@
+using Commande.Application.Abstractions;
 using Commande.Application.Commandes;
 using Commande.Application.Commandes.Ecriture;
 using Commande.Application.Commandes.Lecture;
@@ -8,10 +9,10 @@ namespace Commande.Api.Controllers;
 [ApiController]
 [Route("api/commandes")]
 public class CommandesController(
-    CreerCommandeHandler creer,
-    ChangerStatutCommandeHandler changerStatut,
-    ObtenirCommandeParIdHandler obtenirParId,
-    ObtenirCommandesHandler obtenirToutes) : ControllerBase
+    IHandler<CreerCommande, CommandeDto> creer,
+    IHandler<ChangerStatutCommande, CommandeDto> changerStatut,
+    IHandler<ObtenirCommandeParId, CommandeDto> obtenirParId,
+    IHandler<ObtenirCommandes, IReadOnlyList<CommandeDto>> obtenirToutes) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<CommandeDto>>> ObtenirToutes(CancellationToken ct) =>

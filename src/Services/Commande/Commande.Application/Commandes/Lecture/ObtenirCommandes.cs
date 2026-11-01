@@ -1,5 +1,4 @@
 using Commande.Application.Abstractions;
-using Microsoft.Extensions.Logging;
 
 namespace Commande.Application.Commandes.Lecture;
 
@@ -7,6 +6,7 @@ public record ObtenirCommandeParId(Guid CommandeId);
 public record ObtenirCommandes;
 
 public class ObtenirCommandeParIdHandler(ICommandeRepository repository)
+    : IHandler<ObtenirCommandeParId, CommandeDto>
 {
     public async Task<CommandeDto> Handle(ObtenirCommandeParId demande, CancellationToken ct)
     {
@@ -16,13 +16,12 @@ public class ObtenirCommandeParIdHandler(ICommandeRepository repository)
     }
 }
 
-public class ObtenirCommandesHandler(ICommandeRepository repository, ILogger<ObtenirCommandesHandler> logger)
+public class ObtenirCommandesHandler(ICommandeRepository repository)
+    : IHandler<ObtenirCommandes, IReadOnlyList<CommandeDto>>
 {
     public async Task<IReadOnlyList<CommandeDto>> Handle(ObtenirCommandes demande, CancellationToken ct)
     {
-        logger.LogInformation("Chargement des commandes");
         var commandes = await repository.ObtenirToutesAsync(ct);
-        logger.LogInformation("Chargement terminé : {NombreCommandes} commande(s)", commandes.Count);
         return commandes.Select(CommandeDto.Depuis).ToList();
     }
 }

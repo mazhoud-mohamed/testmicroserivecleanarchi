@@ -7,6 +7,7 @@ public enum ActionCommande { Confirmer, Expedier, Annuler }
 public record ChangerStatutCommande(Guid CommandeId, ActionCommande Action);
 
 public class ChangerStatutCommandeHandler(ICommandeRepository repository)
+    : IHandler<ChangerStatutCommande, CommandeDto>
 {
     public async Task<CommandeDto> Handle(ChangerStatutCommande demande, CancellationToken ct)
     {
