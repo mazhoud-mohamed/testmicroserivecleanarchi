@@ -1,12 +1,11 @@
 using Commande.Api;
 using Commande.Application;
-using Commande.Application.Commandes.Ecriture;
-using Commande.Application.Commandes.Lecture;
 using Commande.Infrastructure;
 using Commande.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -26,31 +25,6 @@ if (app.Environment.IsDevelopment())
     scope.ServiceProvider.GetRequiredService<CommandeDbContext>().Database.EnsureCreated();
 }
 
-var commandes = app.MapGroup("/api/commandes").WithTags("Commandes");
-
-commandes.MapGet("/", async (ObtenirCommandesHandler handler, CancellationToken ct) =>
-    Results.Ok(await handler.Handle(new ObtenirCommandes(), ct)));
-
-commandes.MapGet("/{id:guid}", async (Guid id, ObtenirCommandeParIdHandler handler, CancellationToken ct) =>
-    Results.Ok(await handler.Handle(new ObtenirCommandeParId(id), ct)));
-
-commandes.MapPost("/", async (CreerCommande demande, CreerCommandeHandler handler, CancellationToken ct) =>
-{
-    var commande = await handler.Handle(demande, ct);
-    return Results.Created($"/api/commandes/{commande.Id}", commande);
-});
-
-commandes.MapPost("/{id:guid}/confirmer", (Guid id, ChangerStatutCommandeHandler handler, CancellationToken ct) =>
-    ChangerStatut(id, ActionCommande.Confirmer, handler, ct));
-
-commandes.MapPost("/{id:guid}/expedier", (Guid id, ChangerStatutCommandeHandler handler, CancellationToken ct) =>
-    ChangerStatut(id, ActionCommande.Expedier, handler, ct));
-
-commandes.MapPost("/{id:guid}/annuler", (Guid id, ChangerStatutCommandeHandler handler, CancellationToken ct) =>
-    ChangerStatut(id, ActionCommande.Annuler, handler, ct));
+app.MapControllers();
 
 app.Run();
-
-static async Task<IResult> ChangerStatut(
-    Guid id, ActionCommande action, ChangerStatutCommandeHandler handler, CancellationToken ct) =>
-    Results.Ok(await handler.Handle(new ChangerStatutCommande(id, action), ct));
