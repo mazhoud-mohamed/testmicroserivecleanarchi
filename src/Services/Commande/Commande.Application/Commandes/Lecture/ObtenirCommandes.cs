@@ -1,5 +1,4 @@
 using Commande.Application.Abstractions;
-using CommandeAgregat = Commande.Domain.Commandes.Commande;
 
 namespace Commande.Application.Commandes.Lecture;
 
@@ -11,7 +10,7 @@ public class ObtenirCommandeParIdHandler(ICommandeRepository repository)
     public async Task<CommandeDto> Handle(ObtenirCommandeParId demande, CancellationToken ct)
     {
         var commande = await repository.ObtenirParIdAsync(demande.CommandeId, ct)
-            ?? throw new NonTrouveException(nameof(CommandeAgregat), demande.CommandeId);
+            ?? throw new NonTrouveException("Commande", demande.CommandeId);
         return CommandeDto.Depuis(commande);
     }
 }

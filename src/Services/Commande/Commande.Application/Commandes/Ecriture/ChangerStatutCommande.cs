@@ -1,5 +1,4 @@
 using Commande.Application.Abstractions;
-using CommandeAgregat = Commande.Domain.Commandes.Commande;
 
 namespace Commande.Application.Commandes.Ecriture;
 
@@ -12,7 +11,7 @@ public class ChangerStatutCommandeHandler(ICommandeRepository repository)
     public async Task<CommandeDto> Handle(ChangerStatutCommande demande, CancellationToken ct)
     {
         var commande = await repository.ObtenirParIdAsync(demande.CommandeId, ct)
-            ?? throw new NonTrouveException(nameof(CommandeAgregat), demande.CommandeId);
+            ?? throw new NonTrouveException("Commande", demande.CommandeId);
 
         switch (demande.Action)
         {
