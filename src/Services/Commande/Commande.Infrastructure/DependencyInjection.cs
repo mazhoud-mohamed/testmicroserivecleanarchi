@@ -1,4 +1,5 @@
 using Commande.Application.Abstractions;
+using Commande.Infrastructure.Messaging;
 using Commande.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -15,6 +16,9 @@ public static class DependencyInjection
 
         services.AddDbContext<CommandeDbContext>(o => o.UseSqlServer(connectionString));
         services.AddScoped<ICommandeRepository, CommandeRepository>();
+
+        services.Configure<RabbitMqOptions>(config.GetSection(RabbitMqOptions.Section));
+        services.AddSingleton<IEventBus, RabbitMqEventBus>();
         return services;
     }
 }

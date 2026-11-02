@@ -11,17 +11,22 @@ public class CommandeDbContext(DbContextOptions<CommandeDbContext> options, IDom
 {
     public DbSet<CommandeAgregat> Commandes => Set<CommandeAgregat>();
 
-    // Publie les événements de domaine juste avant d'écrire en base : les handlers participent à la même transaction.
+    // ÉTAPE 2 du trajet : EF Core appelle cette méthode quand on sauvegarde.
+    // On publie les événements de domaine juste AVANT d'écrire en base : les handlers participent
+    // ainsi à la même transaction (utile pour l'Outbox plus tard).
     public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
     {
+        // 1) Parmi les entités suivies par EF, on prend les agrégats qui ont des événements en attente.
         var agregats = ChangeTracker.Entries<AggregateRoot>()
             .Select(e => e.Entity)
             .Where(a => a.Evenements.Count > 0)
             .ToList();
 
+        // 2) On copie les événements puis on vide les listes : un événement n'est publié qu'une seule fois.
         var evenements = agregats.SelectMany(a => a.Evenements).ToList();
         agregats.ForEach(a => a.ViderEvenements());
 
+        // 3) On envoie aux handlers, puis 4) seulement après on écrit vraiment en base.
         await dispatcher.DispatchAsync(evenements, ct);
         return await base.SaveChangesAsync(ct);
     }

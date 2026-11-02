@@ -38,7 +38,14 @@ public class Commande : AggregateRoot
         VerifierEnAttente();
         if (_lignes.Count == 0) throw new DomainException("Impossible de confirmer une commande sans ligne.");
         Statut = StatutCommande.Confirmee;
-        AjouterEvenement(new CommandeConfirmee(Id, ClientId, MontantTotal));
+
+        // ÉTAPE 1 du trajet : la commande ENREGISTRE le fait « je viens d'être confirmée ».
+        // Rien n'est envoyé ici : l'événement attend dans la liste de l'agrégat jusqu'à la sauvegarde.
+        AjouterEvenement(new CommandeConfirmee(
+            Id,
+            ClientId,
+            MontantTotal,
+            _lignes.Select(l => new LigneConfirmee(l.ProduitId, l.Quantite)).ToList()));
     }
 
     public void Expedier()

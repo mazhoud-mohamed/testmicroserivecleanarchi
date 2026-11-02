@@ -2,7 +2,10 @@ using Commande.Domain.Common;
 
 namespace Commande.Domain.Commandes.Evenements;
 
-public record CommandeConfirmee(Guid CommandeId, Guid ClientId, decimal MontantTotal) : DomainEvent;
+public record LigneConfirmee(Guid ProduitId, int Quantite);
+
+public record CommandeConfirmee(Guid CommandeId, Guid ClientId, decimal MontantTotal, IReadOnlyList<LigneConfirmee> Lignes)
+    : DomainEvent;
 
 public record CommandeExpediee(Guid CommandeId, Guid ClientId) : DomainEvent;
 
