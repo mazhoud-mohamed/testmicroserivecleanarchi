@@ -9,11 +9,11 @@ namespace Commande.Application.Commandes.Evenements;
 // Domain Event « CommandeConfirmee » a été levé par la commande.
 //
 // Son rôle : TRADUIRE l'événement interne (Domain Event) en message public (Integration Event)
-// et le confier à l'IEventBus pour qu'il parte vers les autres services.
-public class CommandeConfirmeeHandler(IEventBus eventBus, ILogger<CommandeConfirmeeHandler> logger)
+// et le déposer dans l'Outbox pour qu'il parte plus tard vers les autres services.
+public class CommandeConfirmeeHandler(IOutbox outbox, ILogger<CommandeConfirmeeHandler> logger)
     : IDomainEventHandler<CommandeConfirmee>
 {
-    public async Task Handle(CommandeConfirmee evenement, CancellationToken ct)
+    public Task Handle(CommandeConfirmee evenement, CancellationToken ct)
     {
         logger.LogInformation("Événement CommandeConfirmee reçu : commande {CommandeId}, client {ClientId}, montant {MontantTotal}",
             evenement.CommandeId, evenement.ClientId, evenement.MontantTotal);
@@ -27,9 +27,10 @@ public class CommandeConfirmeeHandler(IEventBus eventBus, ILogger<CommandeConfir
             evenement.ClientId,
             evenement.Lignes.Select(l => new LigneCommandeConfirmee(l.ProduitId, l.Quantite)).ToList());
 
-        // ÉTAPE 5 : envoi vers RabbitMQ (voir RabbitMqEventBus).
-        // Attention : ce handler s'exécute AVANT l'écriture en base. Si l'écriture échoue ensuite,
-        // le message est déjà parti : c'est le problème que le pattern Outbox corrigera.
-        await eventBus.PublierAsync(integration, CommandeConfirmeeIntegrationEvent.CleRoutage, ct);
+        // ÉTAPE 5 : dépôt dans l'Outbox. Rien n'est envoyé ici : la ligne est ajoutée au DbContext et sera
+        // écrite par le SaveChanges en cours, dans la même transaction que le changement de statut.
+        // Soit les deux sont enregistrés, soit aucun : plus de message pour une commande non confirmée.
+        outbox.Ajouter(integration, CommandeConfirmeeIntegrationEvent.CleRoutage);
+        return Task.CompletedTask;
     }
 }

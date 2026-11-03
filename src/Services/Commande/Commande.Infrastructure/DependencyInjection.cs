@@ -1,5 +1,6 @@
 using Commande.Application.Abstractions;
 using Commande.Infrastructure.Messaging;
+using Commande.Infrastructure.Outbox;
 using Commande.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -18,7 +19,11 @@ public static class DependencyInjection
         services.AddScoped<ICommandeRepository, CommandeRepository>();
 
         services.Configure<RabbitMqOptions>(config.GetSection(RabbitMqOptions.Section));
-        services.AddSingleton<IEventBus, RabbitMqEventBus>();
+        services.AddSingleton<IPublicateurMessages, RabbitMqPublicateur>();
+
+        // Outbox : IOutbox écrit dans la base (scoped, même DbContext) ; le publicateur lit et envoie (arrière-plan).
+        services.AddScoped<IOutbox, OutboxEcriture>();
+        services.AddHostedService<PublicateurOutbox>();
         return services;
     }
 }

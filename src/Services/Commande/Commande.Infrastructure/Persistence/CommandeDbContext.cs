@@ -1,6 +1,7 @@
 using Commande.Application.Abstractions;
 using Commande.Domain.Commandes;
 using Commande.Domain.Common;
+using Commande.Infrastructure.Outbox;
 using Microsoft.EntityFrameworkCore;
 using CommandeAgregat = Commande.Domain.Commandes.Commande;
 
@@ -10,6 +11,7 @@ public class CommandeDbContext(DbContextOptions<CommandeDbContext> options, IDom
     : DbContext(options)
 {
     public DbSet<CommandeAgregat> Commandes => Set<CommandeAgregat>();
+    public DbSet<MessageOutbox> MessagesOutbox => Set<MessageOutbox>();
 
     // ÉTAPE 2 du trajet : EF Core appelle cette méthode quand on sauvegarde.
     // On publie les événements de domaine juste AVANT d'écrire en base : les handlers participent
@@ -42,6 +44,16 @@ public class CommandeDbContext(DbContextOptions<CommandeDbContext> options, IDom
             b.HasMany(c => c.Lignes).WithOne().OnDelete(DeleteBehavior.Cascade);
             // EF remplit la liste privée _lignes au lieu de passer par la propriété en lecture seule.
             b.Navigation(c => c.Lignes).UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        modelBuilder.Entity<MessageOutbox>(b =>
+        {
+            b.ToTable("MessagesOutbox");
+            b.HasKey(m => m.Id);
+            b.Property(m => m.Type).HasMaxLength(200);
+            b.Property(m => m.CleRoutage).HasMaxLength(200);
+            // Le publicateur cherche en permanence les lignes non traitées : on l'aide avec un index.
+            b.HasIndex(m => m.TraiteLe);
         });
 
         modelBuilder.Entity<LigneCommande>(b =>
