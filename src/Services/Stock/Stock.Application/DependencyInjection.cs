@@ -9,6 +9,7 @@ public static class DependencyInjection
     {
         services.AddScoped<ApprovisionnerStockHandler>();
         services.AddScoped<ObtenirStocksHandler>();
+        services.AddScoped<ReserverStockPourCommandeHandler>();
         return services;
     }
 }
