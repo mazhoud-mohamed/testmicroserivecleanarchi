@@ -8,13 +8,26 @@ namespace Stock.Application.Articles;
 // C'est le consommateur (Infrastructure) qui traduit le message en cette demande.
 public record LigneAReserver(Guid ProduitId, int Quantite);
 
-public record ReserverStockPourCommande(Guid CommandeId, IReadOnlyList<LigneAReserver> Lignes);
+// MessageId : l'identifiant du message reçu (EventId). Il sert à reconnaître un message déjà traité.
+public record ReserverStockPourCommande(Guid MessageId, Guid CommandeId, IReadOnlyList<LigneAReserver> Lignes);
 
 // Réserve le stock de TOUTES les lignes d'une commande, ou d'aucune.
-public class ReserverStockPourCommandeHandler(IStockRepository repository, ILogger<ReserverStockPourCommandeHandler> logger)
+public class ReserverStockPourCommandeHandler(
+    IStockRepository repository,
+    IMessagesTraites messagesTraites,
+    ILogger<ReserverStockPourCommandeHandler> logger)
 {
     public async Task Handle(ReserverStockPourCommande demande, CancellationToken ct)
     {
+        // INBOX : RabbitMQ garantit « au moins une fois », donc ce message peut arriver deux fois.
+        // S'il a déjà été appliqué, on s'arrête là : le consommateur acquittera, sans réserver de nouveau.
+        if (await messagesTraites.ADejaEteTraiteAsync(demande.MessageId, ct))
+        {
+            logger.LogWarning("Message {MessageId} déjà traité (commande {CommandeId}), ignoré",
+                demande.MessageId, demande.CommandeId);
+            return;
+        }
+
         // Si la commande contient deux fois le même produit, on additionne les quantités avant de réserver.
         var besoins = demande.Lignes
             .GroupBy(l => l.ProduitId)
@@ -31,6 +44,10 @@ public class ReserverStockPourCommandeHandler(IStockRepository repository, ILogg
             // Lève une DomainException si le stock est insuffisant.
             article.Reserver(quantite);
         }
+
+        // La trace « message traité » part dans le MÊME SaveChanges que les réservations :
+        // impossible d'avoir l'une sans l'autre (sinon on réserverait sans trace, ou on tracerait sans réserver).
+        messagesTraites.MarquerCommeTraite(demande.MessageId);
 
         // Un seul SaveChanges à la fin : si une ligne a échoué plus haut, on n'arrive jamais ici
         // et rien n'est écrit. C'est ce qui rend la réservation « tout ou rien ».

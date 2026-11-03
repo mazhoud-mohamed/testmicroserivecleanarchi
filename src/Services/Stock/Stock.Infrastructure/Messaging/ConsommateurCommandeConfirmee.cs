@@ -96,6 +96,7 @@ public sealed class ConsommateurCommandeConfirmee(
 
             // Traduction du message de Commande en demande propre à Stock.
             var demande = new ReserverStockPourCommande(
+                evenement.EventId,
                 evenement.CommandeId,
                 evenement.Lignes.Select(l => new LigneAReserver(l.ProduitId, l.Quantite)).ToList());
 

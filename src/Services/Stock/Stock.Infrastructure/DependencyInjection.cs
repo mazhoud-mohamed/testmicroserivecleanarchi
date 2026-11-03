@@ -16,6 +16,7 @@ public static class DependencyInjection
 
         services.AddDbContext<StockDbContext>(o => o.UseSqlServer(connectionString));
         services.AddScoped<IStockRepository, StockRepository>();
+        services.AddScoped<IMessagesTraites, MessagesTraites>();
 
         services.Configure<RabbitMqOptions>(config.GetSection(RabbitMqOptions.Section));
         services.AddHostedService<ConsommateurCommandeConfirmee>();
