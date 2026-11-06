@@ -38,6 +38,39 @@ namespace Stock.Infrastructure.Persistence.Migrations
                     b.ToTable("Articles");
                 });
 
+            modelBuilder.Entity("Stock.Infrastructure.Outbox.MessageOutbox", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CleRoutage")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Contenu")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreeLe")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("TraiteLe")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TraiteLe");
+
+                    b.ToTable("MessagesOutbox", (string)null);
+                });
+
             modelBuilder.Entity("Stock.Infrastructure.Persistence.MessageTraite", b =>
                 {
                     b.Property<Guid>("Id")

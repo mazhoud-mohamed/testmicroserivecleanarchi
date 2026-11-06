@@ -12,6 +12,9 @@ public class RabbitMqOptions
     // Exchange sur lequel Commande publie : Stock doit utiliser exactement le même nom.
     public string Exchange { get; set; } = "commande.events";
 
+    // Exchange sur lequel Stock publie ses propres événements (ex. ReservationEchouee) : Commande s'y abonne.
+    public string ExchangePublication { get; set; } = "stock.events";
+
     // Boîte aux lettres PROPRE à Stock : c'est lui qui la déclare et qui y lit ses messages.
     public string File { get; set; } = "stock.commande";
 }
