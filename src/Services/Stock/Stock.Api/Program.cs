@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Stock.Api;
 using Stock.Application;
@@ -26,9 +27,9 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Stock API v1"));
 
-    // Crée la base StockDb et ses tables si elles n'existent pas (pas de migrations pour l'instant).
+    // Applique les migrations en attente : crée la base si besoin, puis fait évoluer le schéma pas à pas.
     using var scope = app.Services.CreateScope();
-    scope.ServiceProvider.GetRequiredService<StockDbContext>().Database.EnsureCreated();
+    scope.ServiceProvider.GetRequiredService<StockDbContext>().Database.Migrate();
 }
 
 app.MapControllers();

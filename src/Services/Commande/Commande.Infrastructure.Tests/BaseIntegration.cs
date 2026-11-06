@@ -65,7 +65,8 @@ public abstract class BaseIntegration : IAsyncLifetime
         Services = services.BuildServiceProvider();
 
         await using var scope = Services.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<CommandeDbContext>().Database.EnsureCreatedAsync();
+        // Migrate (et non EnsureCreated) : les tests exercent les vraies migrations, pas seulement le modèle.
+        await scope.ServiceProvider.GetRequiredService<CommandeDbContext>().Database.MigrateAsync();
     }
 
     public async Task DisposeAsync()

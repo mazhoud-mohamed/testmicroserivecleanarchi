@@ -2,6 +2,7 @@ using Commande.Api;
 using Commande.Application;
 using Commande.Infrastructure;
 using Commande.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,9 +30,10 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Commande API v1"));
 
-    // Crée la base et les tables si elles n'existent pas (pas de migrations pour l'instant).
+    // Applique les migrations en attente : crée la base si besoin, puis fait évoluer le schéma pas à pas.
+    // En production on évite de le faire au démarrage (voir la migration appliquée par le déploiement).
     using var scope = app.Services.CreateScope();
-    scope.ServiceProvider.GetRequiredService<CommandeDbContext>().Database.EnsureCreated();
+    scope.ServiceProvider.GetRequiredService<CommandeDbContext>().Database.Migrate();
 }
 
 app.MapControllers();
