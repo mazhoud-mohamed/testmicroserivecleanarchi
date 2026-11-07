@@ -17,6 +17,13 @@ public class StockDbContext(DbContextOptions<StockDbContext> options) : DbContex
             // La clé est le ProduitId venant du service Commande : EF ne doit pas en générer une.
             b.HasKey(a => a.ProduitId);
             b.Property(a => a.ProduitId).ValueGeneratedNever();
+
+            // CONCURRENCE OPTIMISTE : SQL Server met à jour tout seul cette colonne à chaque modification de la ligne.
+            // EF l'ajoute à chaque UPDATE (« ... WHERE ProduitId = @p AND RowVersion = @valeurLue ») :
+            // si quelqu'un a modifié la ligne entre notre lecture et notre écriture, 0 ligne est touchée
+            // et EF lève DbUpdateConcurrencyException au lieu d'écraser son travail.
+            // Propriété d'ombre : elle n'existe que pour EF, la classe du Domain n'en sait rien.
+            b.Property<byte[]>("RowVersion").IsRowVersion();
         });
 
         modelBuilder.Entity<MessageOutbox>(b =>

@@ -33,6 +33,11 @@ namespace Stock.Infrastructure.Persistence.Migrations
                     b.Property<int>("QuantiteReservee")
                         .HasColumnType("int");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.HasKey("ProduitId");
 
                     b.ToTable("Articles");

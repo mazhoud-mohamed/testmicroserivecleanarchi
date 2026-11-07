@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contrats.Commandes;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -113,6 +114,13 @@ public sealed class ConsommateurCommandeConfirmee(
             // le rejouer donnerait le même résultat. requeue: false = RabbitMQ l'abandonne.
             logger.LogWarning(ex, "Message {MessageId} rejeté définitivement", messageId);
             await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: false, arret);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // Quelqu'un a modifié le même article entre notre lecture et notre écriture (RowVersion) : rien n'a été
+            // enregistré, c'est un conflit TEMPORAIRE. On remet le message dans la file : le rejeu relira le stock à jour.
+            logger.LogWarning(ex, "Conflit de concurrence sur le message {MessageId}, il sera rejoué", messageId);
+            await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: true, arret);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
