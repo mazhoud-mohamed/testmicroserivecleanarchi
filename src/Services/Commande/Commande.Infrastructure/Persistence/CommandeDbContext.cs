@@ -12,6 +12,7 @@ public class CommandeDbContext(DbContextOptions<CommandeDbContext> options, IDom
 {
     public DbSet<CommandeAgregat> Commandes => Set<CommandeAgregat>();
     public DbSet<MessageOutbox> MessagesOutbox => Set<MessageOutbox>();
+    public DbSet<MessageTraite> MessagesTraites => Set<MessageTraite>();
 
     // ÉTAPE 2 du trajet : EF Core appelle cette méthode quand on sauvegarde.
     // On publie les événements de domaine juste AVANT d'écrire en base : les handlers participent
@@ -39,6 +40,7 @@ public class CommandeDbContext(DbContextOptions<CommandeDbContext> options, IDom
         {
             b.HasKey(c => c.Id);
             b.Property(c => c.Statut).HasConversion<string>().HasMaxLength(20);
+            b.Property(c => c.MotifAnnulation).HasMaxLength(1000);
             b.Ignore(c => c.MontantTotal);
             b.Ignore(c => c.Evenements);
             b.HasMany(c => c.Lignes).WithOne().OnDelete(DeleteBehavior.Cascade);
@@ -54,6 +56,14 @@ public class CommandeDbContext(DbContextOptions<CommandeDbContext> options, IDom
             b.Property(m => m.CleRoutage).HasMaxLength(200);
             // Le publicateur cherche en permanence les lignes non traitées : on l'aide avec un index.
             b.HasIndex(m => m.TraiteLe);
+        });
+
+        modelBuilder.Entity<MessageTraite>(b =>
+        {
+            b.ToTable("MessagesTraites");
+            // L'Id vient du message (EventId) : EF ne doit pas en générer un.
+            b.HasKey(m => m.Id);
+            b.Property(m => m.Id).ValueGeneratedNever();
         });
 
         modelBuilder.Entity<LigneCommande>(b =>

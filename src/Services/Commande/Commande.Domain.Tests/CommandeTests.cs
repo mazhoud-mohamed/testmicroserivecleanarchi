@@ -124,10 +124,54 @@ public class CommandeTests
     {
         var commande = CommandeAvecUneLigne();
 
-        commande.Annuler();
+        commande.Annuler("Motif de test");
 
         Assert.Equal(StatutCommande.Annulee, commande.Statut);
         Assert.IsType<CommandeAnnulee>(Assert.Single(commande.Evenements));
+    }
+
+    [Fact]
+    public void Annuler_conserve_le_motif_et_le_porte_dans_l_evenement()
+    {
+        var commande = CommandeAvecUneLigne();
+        commande.Confirmer();
+        commande.ViderEvenements();
+
+        commande.Annuler("Stock insuffisant");
+
+        Assert.Equal("Stock insuffisant", commande.MotifAnnulation);
+        var evenement = Assert.IsType<CommandeAnnulee>(Assert.Single(commande.Evenements));
+        Assert.Equal("Stock insuffisant", evenement.Motif);
+    }
+
+    [Fact]
+    public void Une_commande_confirmee_peut_etre_annulee()
+    {
+        var commande = CommandeAvecUneLigne();
+        commande.Confirmer();
+
+        commande.Annuler("Stock insuffisant");
+
+        Assert.Equal(StatutCommande.Annulee, commande.Statut);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Annuler_sans_motif_est_refuse_et_ne_change_rien(string motif)
+    {
+        var commande = CommandeAvecUneLigne();
+
+        Assert.Throws<DomainException>(() => commande.Annuler(motif));
+
+        Assert.Equal(StatutCommande.EnAttente, commande.Statut);
+        Assert.Null(commande.MotifAnnulation);
+    }
+
+    [Fact]
+    public void Une_commande_non_annulee_n_a_pas_de_motif()
+    {
+        Assert.Null(CommandeAvecUneLigne().MotifAnnulation);
     }
 
     [Fact]
@@ -137,7 +181,7 @@ public class CommandeTests
         commande.Confirmer();
         commande.Expedier();
 
-        Assert.Throws<DomainException>(commande.Annuler);
+        Assert.Throws<DomainException>(() => commande.Annuler("Motif de test"));
         Assert.Equal(StatutCommande.Expediee, commande.Statut);
     }
 
@@ -145,9 +189,9 @@ public class CommandeTests
     public void Annuler_deux_fois_est_refuse()
     {
         var commande = CommandeAvecUneLigne();
-        commande.Annuler();
+        commande.Annuler("Motif de test");
 
-        Assert.Throws<DomainException>(commande.Annuler);
+        Assert.Throws<DomainException>(() => commande.Annuler("Motif de test"));
     }
 
     [Fact]

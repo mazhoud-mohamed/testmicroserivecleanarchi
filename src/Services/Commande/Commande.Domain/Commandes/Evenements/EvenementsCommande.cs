@@ -9,4 +9,4 @@ public record CommandeConfirmee(Guid CommandeId, Guid ClientId, decimal MontantT
 
 public record CommandeExpediee(Guid CommandeId, Guid ClientId) : DomainEvent;
 
-public record CommandeAnnulee(Guid CommandeId, Guid ClientId) : DomainEvent;
+public record CommandeAnnulee(Guid CommandeId, Guid ClientId, string Motif) : DomainEvent;

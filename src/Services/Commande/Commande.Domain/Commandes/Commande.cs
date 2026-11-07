@@ -24,6 +24,10 @@ public class Commande : AggregateRoot
     public Guid ClientId { get; private set; }
     public StatutCommande Statut { get; private set; }
     public DateTime DateCreation { get; private set; }
+
+    // Renseigné uniquement quand la commande est annulée (null sinon).
+    public string? MotifAnnulation { get; private set; }
+
     public IReadOnlyCollection<LigneCommande> Lignes => _lignes.AsReadOnly();
     public decimal MontantTotal => _lignes.Sum(l => l.Total);
 
@@ -56,12 +60,15 @@ public class Commande : AggregateRoot
         AjouterEvenement(new CommandeExpediee(Id, ClientId));
     }
 
-    public void Annuler()
+    // Le motif explique POURQUOI la commande est annulée (demande du client, rupture de stock détectée par la saga...).
+    public void Annuler(string motif)
     {
+        if (string.IsNullOrWhiteSpace(motif)) throw new DomainException("Le motif d'annulation est obligatoire.");
         if (Statut is StatutCommande.Expediee or StatutCommande.Annulee)
             throw new DomainException($"Impossible d'annuler une commande {Statut}.");
         Statut = StatutCommande.Annulee;
-        AjouterEvenement(new CommandeAnnulee(Id, ClientId));
+        MotifAnnulation = motif;
+        AjouterEvenement(new CommandeAnnulee(Id, ClientId, motif));
     }
 
     private void VerifierEnAttente()

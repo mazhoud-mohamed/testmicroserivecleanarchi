@@ -18,7 +18,7 @@ public class ChangerStatutCommandeHandler(ICommandeRepository repository)
         {
             case ActionCommande.Confirmer: commande.Confirmer(); break;
             case ActionCommande.Expedier: commande.Expedier(); break;
-            case ActionCommande.Annuler: commande.Annuler(); break;
+            case ActionCommande.Annuler: commande.Annuler("Annulée à la demande de l'utilisateur."); break;
         }
 
         await repository.SauvegarderAsync(ct);

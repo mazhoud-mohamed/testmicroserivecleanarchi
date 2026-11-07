@@ -24,6 +24,10 @@ public static class DependencyInjection
         // Outbox : IOutbox écrit dans la base (scoped, même DbContext) ; le publicateur lit et envoie (arrière-plan).
         services.AddScoped<IOutbox, OutboxEcriture>();
         services.AddHostedService<PublicateurOutbox>();
+
+        // Inbox + consommateur du chemin retour de la saga (messages publiés par Stock).
+        services.AddScoped<IMessagesTraites, MessagesTraites>();
+        services.AddHostedService<ConsommateurReservationEchouee>();
         return services;
     }
 }

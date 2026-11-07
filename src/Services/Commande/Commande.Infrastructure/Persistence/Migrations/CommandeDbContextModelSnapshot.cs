@@ -34,6 +34,10 @@ namespace Commande.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("DateCreation")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("MotifAnnulation")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("Statut")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -106,6 +110,19 @@ namespace Commande.Infrastructure.Persistence.Migrations
                     b.HasIndex("TraiteLe");
 
                     b.ToTable("MessagesOutbox", (string)null);
+                });
+
+            modelBuilder.Entity("Commande.Infrastructure.Persistence.MessageTraite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("TraiteLe")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("MessagesTraites", (string)null);
                 });
 
             modelBuilder.Entity("Commande.Domain.Commandes.LigneCommande", b =>

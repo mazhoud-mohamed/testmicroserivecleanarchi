@@ -10,7 +10,8 @@ public record CommandeDto(
     string Statut,
     DateTime DateCreation,
     decimal MontantTotal,
-    IReadOnlyList<LigneCommandeDto> Lignes)
+    IReadOnlyList<LigneCommandeDto> Lignes,
+    string? MotifAnnulation)
 {
     public static CommandeDto Depuis(CommandeAgregat c) => new(
         c.Id,
@@ -18,5 +19,6 @@ public record CommandeDto(
         c.Statut.ToString(),
         c.DateCreation,
         c.MontantTotal,
-        c.Lignes.Select(l => new LigneCommandeDto(l.ProduitId, l.NomProduit, l.PrixUnitaire, l.Quantite, l.Total)).ToList());
+        c.Lignes.Select(l => new LigneCommandeDto(l.ProduitId, l.NomProduit, l.PrixUnitaire, l.Quantite, l.Total)).ToList(),
+        c.MotifAnnulation);
 }
