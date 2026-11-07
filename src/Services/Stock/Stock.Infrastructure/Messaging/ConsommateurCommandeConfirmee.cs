@@ -64,11 +64,24 @@ public sealed class ConsommateurCommandeConfirmee(
         // 1. L'exchange (même déclaration que côté Commande : l'ordre de démarrage des services n'a pas d'importance).
         await canal.ExchangeDeclareAsync(_options.Exchange, ExchangeType.Topic, durable: true, cancellationToken: arret);
 
-        // 2. Notre boîte aux lettres. durable = elle survit à un redémarrage de RabbitMQ.
+        // 2. La DEAD-LETTER QUEUE : la file où RabbitMQ range les messages refusés (nack sans requeue), au lieu de les
+        // jeter. On pourra les examiner dans l'interface de gestion, les corriger, puis les rejouer à la main.
+        // « fanout » : tout message mort est copié dans la file, quelle que soit sa clé de routage d'origine.
+        var echangeMorts = $"{_options.File}.dlx";
+        var fileMorts = $"{_options.File}.dlq";
+        await canal.ExchangeDeclareAsync(echangeMorts, ExchangeType.Fanout, durable: true, cancellationToken: arret);
+        await canal.QueueDeclareAsync(fileMorts, durable: true, exclusive: false, autoDelete: false,
+            cancellationToken: arret);
+        await canal.QueueBindAsync(fileMorts, echangeMorts, routingKey: "", cancellationToken: arret);
+
+        // 3. Notre boîte aux lettres. durable = elle survit à un redémarrage de RabbitMQ.
+        // x-dead-letter-exchange : où envoyer un message refusé sans requeue.
+        // Attention : ces arguments ne peuvent plus changer une fois la file créée (RabbitMQ refuse la redéclaration).
         await canal.QueueDeclareAsync(_options.File, durable: true, exclusive: false, autoDelete: false,
+            arguments: new Dictionary<string, object?> { ["x-dead-letter-exchange"] = echangeMorts },
             cancellationToken: arret);
 
-        // 3. Le binding : « envoie-moi les messages de cet exchange dont la clé est commande.confirmee ».
+        // 4. Le binding : « envoie-moi les messages de cet exchange dont la clé est commande.confirmee ».
         await canal.QueueBindAsync(_options.File, _options.Exchange, CommandeConfirmeeIntegrationEvent.CleRoutage,
             cancellationToken: arret);
 
@@ -110,8 +123,8 @@ public sealed class ConsommateurCommandeConfirmee(
         }
         catch (Exception ex) when (ex is DomainException or JsonException)
         {
-            // Échec DÉFINITIF (stock insuffisant, produit inconnu, message illisible) :
-            // le rejouer donnerait le même résultat. requeue: false = RabbitMQ l'abandonne.
+            // Échec DÉFINITIF (message illisible, règle métier violée) : le rejouer donnerait le même résultat.
+            // requeue: false = RabbitMQ ne le remet pas dans la file : il l'envoie dans la dead-letter queue.
             logger.LogWarning(ex, "Message {MessageId} rejeté définitivement", messageId);
             await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: false, arret);
         }

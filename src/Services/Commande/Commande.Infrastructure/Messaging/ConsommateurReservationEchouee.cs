@@ -62,11 +62,24 @@ public sealed class ConsommateurReservationEchouee(
         // 1. L'exchange de Stock (même déclaration que côté Stock : l'ordre de démarrage des services n'a pas d'importance).
         await canal.ExchangeDeclareAsync(_options.ExchangeStock, ExchangeType.Topic, durable: true, cancellationToken: arret);
 
-        // 2. Notre boîte aux lettres. durable = elle survit à un redémarrage de RabbitMQ.
+        // 2. La DEAD-LETTER QUEUE : la file où RabbitMQ range les messages refusés (nack sans requeue), au lieu de les
+        // jeter. On pourra les examiner dans l'interface de gestion, les corriger, puis les rejouer à la main.
+        // « fanout » : tout message mort est copié dans la file, quelle que soit sa clé de routage d'origine.
+        var echangeMorts = $"{_options.FileStock}.dlx";
+        var fileMorts = $"{_options.FileStock}.dlq";
+        await canal.ExchangeDeclareAsync(echangeMorts, ExchangeType.Fanout, durable: true, cancellationToken: arret);
+        await canal.QueueDeclareAsync(fileMorts, durable: true, exclusive: false, autoDelete: false,
+            cancellationToken: arret);
+        await canal.QueueBindAsync(fileMorts, echangeMorts, routingKey: "", cancellationToken: arret);
+
+        // 3. Notre boîte aux lettres. durable = elle survit à un redémarrage de RabbitMQ.
+        // x-dead-letter-exchange : où envoyer un message refusé sans requeue.
+        // Attention : ces arguments ne peuvent plus changer une fois la file créée (RabbitMQ refuse la redéclaration).
         await canal.QueueDeclareAsync(_options.FileStock, durable: true, exclusive: false, autoDelete: false,
+            arguments: new Dictionary<string, object?> { ["x-dead-letter-exchange"] = echangeMorts },
             cancellationToken: arret);
 
-        // 3. Le binding : « envoie-moi les messages de cet exchange dont la clé est stock.reservation-echouee ».
+        // 4. Le binding : « envoie-moi les messages de cet exchange dont la clé est stock.reservation-echouee ».
         await canal.QueueBindAsync(_options.FileStock, _options.ExchangeStock,
             ReservationEchoueeIntegrationEvent.CleRoutage, cancellationToken: arret);
 
