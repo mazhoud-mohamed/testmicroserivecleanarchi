@@ -1,6 +1,6 @@
+using Contrats.Stock;
 using Microsoft.Extensions.Logging;
 using Stock.Application.Abstractions;
-using Stock.Domain.Common;
 
 namespace Stock.Application.Articles;
 
@@ -11,21 +11,32 @@ public record LigneAReserver(Guid ProduitId, int Quantite);
 // MessageId : l'identifiant du message reçu (EventId). Il sert à reconnaître un message déjà traité.
 public record ReserverStockPourCommande(Guid MessageId, Guid CommandeId, IReadOnlyList<LigneAReserver> Lignes);
 
+// Issue du traitement. Un refus (produit inconnu, stock insuffisant) n'est PAS une erreur technique :
+// c'est une issue métier normale, qui déclenche la compensation de la saga.
+public enum ResultatReservation
+{
+    Reservee,
+    Refusee,
+    DejaTraite
+}
+
 // Réserve le stock de TOUTES les lignes d'une commande, ou d'aucune.
+// En cas de refus, il n'y a ni exception ni message perdu : Stock publie « ReservationEchouee » pour que Commande annule.
 public class ReserverStockPourCommandeHandler(
     IStockRepository repository,
     IMessagesTraites messagesTraites,
+    IOutbox outbox,
     ILogger<ReserverStockPourCommandeHandler> logger)
 {
-    public async Task Handle(ReserverStockPourCommande demande, CancellationToken ct)
+    public async Task<ResultatReservation> Handle(ReserverStockPourCommande demande, CancellationToken ct)
     {
         // INBOX : RabbitMQ garantit « au moins une fois », donc ce message peut arriver deux fois.
-        // S'il a déjà été appliqué, on s'arrête là : le consommateur acquittera, sans réserver de nouveau.
+        // S'il a déjà été traité (réservé OU refusé), on s'arrête là : ni nouvelle réservation, ni second échec publié.
         if (await messagesTraites.ADejaEteTraiteAsync(demande.MessageId, ct))
         {
             logger.LogWarning("Message {MessageId} déjà traité (commande {CommandeId}), ignoré",
                 demande.MessageId, demande.CommandeId);
-            return;
+            return ResultatReservation.DejaTraite;
         }
 
         // Si la commande contient deux fois le même produit, on additionne les quantités avant de réserver.
@@ -36,24 +47,44 @@ public class ReserverStockPourCommandeHandler(
         var articles = (await repository.ObtenirParProduitsAsync(besoins.Keys, ct))
             .ToDictionary(a => a.ProduitId);
 
+        // ÉTAPE 1 : on VÉRIFIE toutes les lignes, sans rien modifier. On garde tous les refus pour un motif complet.
+        var refus = new List<string>();
         foreach (var (produitId, quantite) in besoins)
         {
             if (!articles.TryGetValue(produitId, out var article))
-                throw new DomainException($"Le produit {produitId} est inconnu dans le stock.");
-
-            // Lève une DomainException si le stock est insuffisant.
-            article.Reserver(quantite);
+                refus.Add($"Le produit {produitId} est inconnu dans le stock.");
+            else if (article.VerifierReservation(quantite) is { } raison)
+                refus.Add(raison);
         }
 
-        // La trace « message traité » part dans le MÊME SaveChanges que les réservations :
-        // impossible d'avoir l'une sans l'autre (sinon on réserverait sans trace, ou on tracerait sans réserver).
+        // La trace « message traité » part dans le MÊME SaveChanges que le reste (réservation ou échec) :
+        // impossible d'avoir l'une sans l'autre.
         messagesTraites.MarquerCommeTraite(demande.MessageId);
 
-        // Un seul SaveChanges à la fin : si une ligne a échoué plus haut, on n'arrive jamais ici
-        // et rien n'est écrit. C'est ce qui rend la réservation « tout ou rien ».
+        if (refus.Count > 0)
+        {
+            // ÉTAPE 2a : refus. Aucun article n'a été modifié ; on dépose seulement le message de compensation
+            // dans l'Outbox. Il partira après le commit, vers Commande, qui annulera la commande.
+            var motif = string.Join(" ", refus);
+            outbox.Ajouter(
+                new ReservationEchoueeIntegrationEvent(Guid.NewGuid(), DateTime.UtcNow, demande.CommandeId, motif),
+                ReservationEchoueeIntegrationEvent.CleRoutage);
+
+            await repository.SauvegarderAsync(ct);
+
+            logger.LogWarning("Réservation refusée pour la commande {CommandeId} : {Motif}", demande.CommandeId, motif);
+            return ResultatReservation.Refusee;
+        }
+
+        // ÉTAPE 2b : tout est réservable. Les vérifications ont déjà tout validé, Reserver ne peut plus échouer.
+        foreach (var (produitId, quantite) in besoins)
+            articles[produitId].Reserver(quantite);
+
+        // Un seul SaveChanges : les réservations de toutes les lignes sont enregistrées ensemble, ou pas du tout.
         await repository.SauvegarderAsync(ct);
 
         logger.LogInformation("Stock réservé pour la commande {CommandeId} : {NombreProduits} produit(s)",
             demande.CommandeId, besoins.Count);
+        return ResultatReservation.Reservee;
     }
 }

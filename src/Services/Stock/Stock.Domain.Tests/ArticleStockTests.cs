@@ -93,6 +93,50 @@ public class ArticleStockTests
     }
 
     [Fact]
+    public void VerifierReservation_renvoie_null_quand_c_est_possible_et_ne_modifie_rien()
+    {
+        var article = new ArticleStock(ProduitId, 10);
+
+        Assert.Null(article.VerifierReservation(10));
+
+        Assert.Equal(10, article.QuantiteDisponible);
+        Assert.Equal(0, article.QuantiteReservee);
+    }
+
+    [Fact]
+    public void VerifierReservation_explique_un_stock_insuffisant_sans_rien_modifier()
+    {
+        var article = new ArticleStock(ProduitId, 2);
+
+        var raison = article.VerifierReservation(5);
+
+        Assert.Contains("Stock insuffisant", raison);
+        Assert.Contains("2 disponible(s), 5 demandé(s)", raison);
+        Assert.Equal(2, article.QuantiteDisponible);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void VerifierReservation_refuse_une_quantite_invalide(int quantite)
+    {
+        var article = new ArticleStock(ProduitId, 10);
+
+        Assert.NotNull(article.VerifierReservation(quantite));
+    }
+
+    [Fact]
+    public void Reserver_leve_la_meme_raison_que_VerifierReservation()
+    {
+        var article = new ArticleStock(ProduitId, 2);
+        var raison = article.VerifierReservation(5);
+
+        var exception = Assert.Throws<DomainException>(() => article.Reserver(5));
+
+        Assert.Equal(raison, exception.Message);
+    }
+
+    [Fact]
     public void Reservations_successives_s_additionnent()
     {
         var article = new ArticleStock(ProduitId, 10);

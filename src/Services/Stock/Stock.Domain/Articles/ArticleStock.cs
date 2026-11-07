@@ -28,13 +28,23 @@ public class ArticleStock
         QuantiteDisponible += quantite;
     }
 
+    // Vérifie si on peut réserver cette quantité, SANS rien modifier.
+    // Renvoie null si c'est possible, sinon la raison du refus.
+    // Permet à l'Application de contrôler toutes les lignes d'une commande avant de toucher au stock.
+    public string? VerifierReservation(int quantite)
+    {
+        if (quantite <= 0) return "La quantité à réserver doit être supérieure à zéro.";
+        if (quantite > QuantiteDisponible)
+            return $"Stock insuffisant pour le produit {ProduitId} : {QuantiteDisponible} disponible(s), {quantite} demandé(s).";
+        return null;
+    }
+
     // Réserver = retirer du disponible et mettre de côté pour une commande.
     public void Reserver(int quantite)
     {
-        if (quantite <= 0) throw new DomainException("La quantité à réserver doit être supérieure à zéro.");
-        if (quantite > QuantiteDisponible)
-            throw new DomainException(
-                $"Stock insuffisant pour le produit {ProduitId} : {QuantiteDisponible} disponible(s), {quantite} demandé(s).");
+        // Même règle que VerifierReservation : une seule source de vérité.
+        var refus = VerifierReservation(quantite);
+        if (refus is not null) throw new DomainException(refus);
 
         QuantiteDisponible -= quantite;
         QuantiteReservee += quantite;

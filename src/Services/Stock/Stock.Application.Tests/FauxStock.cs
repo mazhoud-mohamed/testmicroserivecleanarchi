@@ -7,8 +7,12 @@ namespace Stock.Application.Tests;
 // Elle imite le vrai DbContext sur deux points essentiels :
 //   - les articles lus sont des COPIES « suivies » : les modifier ne change pas la base tant qu'on n'a pas sauvegardé ;
 //   - MarquerCommeTraite n'est enregistré qu'au SauvegarderAsync, dans la même « transaction » que les articles.
-public class FauxStock : IStockRepository, IMessagesTraites
+public class FauxStock : IStockRepository, IMessagesTraites, IOutbox
 {
+    // Messages « écrits en base » dans l'Outbox (après sauvegarde), et ceux qui attendent le prochain SauvegarderAsync.
+    private readonly List<(string Cle, object Evenement)> _outbox = [];
+    private readonly List<(string Cle, object Evenement)> _outboxEnAttente = [];
+
     // Ce qui est réellement « en base ».
     private readonly Dictionary<Guid, (int Disponible, int Reservee)> _enBase = [];
     private readonly HashSet<Guid> _messagesTraites = [];
@@ -29,12 +33,16 @@ public class FauxStock : IStockRepository, IMessagesTraites
 
     public bool EstTraite(Guid messageId) => _messagesTraites.Contains(messageId);
 
+    // Les messages réellement enregistrés dans l'Outbox (ceux d'une sauvegarde qui a réussi).
+    public IReadOnlyList<(string Cle, object Evenement)> Outbox => _outbox;
+
     // Le consommateur ouvre un scope (donc un DbContext neuf) par message : ce qui était suivi ou
     // en attente d'une sauvegarde qui n'a pas eu lieu est abandonné.
     public void NouveauScope()
     {
         _suivis.Clear();
         _marquesEnAttente.Clear();
+        _outboxEnAttente.Clear();
     }
 
     // IStockRepository
@@ -60,11 +68,17 @@ public class FauxStock : IStockRepository, IMessagesTraites
         foreach (var article in _suivis.Values)
             _enBase[article.ProduitId] = (article.QuantiteDisponible, article.QuantiteReservee);
         _messagesTraites.UnionWith(_marquesEnAttente);
+        _outbox.AddRange(_outboxEnAttente);
 
         _suivis.Clear();
         _marquesEnAttente.Clear();
+        _outboxEnAttente.Clear();
         return Task.CompletedTask;
     }
+
+    // IOutbox : comme le vrai, n'écrit qu'au SauvegarderAsync.
+    public void Ajouter<TEvent>(TEvent evenement, string cleRoutage) where TEvent : Contrats.IIntegrationEvent =>
+        _outboxEnAttente.Add((cleRoutage, evenement));
 
     // IMessagesTraites
     public Task<bool> ADejaEteTraiteAsync(Guid messageId, CancellationToken ct) =>
