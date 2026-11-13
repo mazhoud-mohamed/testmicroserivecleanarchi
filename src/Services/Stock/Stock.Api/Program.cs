@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
@@ -47,6 +48,15 @@ builder.Services.AddOpenTelemetry()
         // Affichage des spans dans la console : utile pour déboguer, mais très verbeux, donc désactivé par défaut.
         if (builder.Configuration.GetValue<bool>("OpenTelemetry:Console"))
             traces.AddConsoleExporter();
+    })
+    .WithMetrics(mesures =>
+    {
+        // Nos mesures (Outbox, messages reçus) et celles d'ASP.NET (nombre et durée des requêtes HTTP).
+        mesures.AddMeter(Telemetrie.NomSource).AddAspNetCoreInstrumentation();
+
+        // Affichage console : un gros bloc toutes les 10 secondes, donc désactivé par défaut (même réglage que les traces).
+        if (builder.Configuration.GetValue<bool>("OpenTelemetry:Console"))
+            mesures.AddConsoleExporter();
     });
 
 builder.Services.AddControllers();

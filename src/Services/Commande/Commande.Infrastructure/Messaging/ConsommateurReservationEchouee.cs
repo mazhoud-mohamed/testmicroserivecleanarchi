@@ -112,6 +112,10 @@ public sealed class ConsommateurReservationEchouee(
         activite?.SetTag("messaging.destination.name", _options.FileStock);
         activite?.SetTag("messaging.message.id", messageId);
 
+        // Métriques : durée du traitement et issue (réussi, rejeté, erreur technique), enregistrées quoi qu'il arrive.
+        var chrono = Stopwatch.StartNew();
+        var resultat = "inconnu";
+
         try
         {
             var evenement = JsonSerializer.Deserialize<ReservationEchoueeIntegrationEvent>(livraison.Body.Span)
@@ -122,7 +126,7 @@ public sealed class ConsommateurReservationEchouee(
             await using var scope = fabriqueScopes.CreateAsyncScope();
             var handler = scope.ServiceProvider
                 .GetRequiredService<IHandler<AnnulerCommandeSuiteEchecStock, ResultatAnnulation>>();
-            await handler.Handle(demande, arret);
+            resultat = (await handler.Handle(demande, arret)).ToString();
 
             // Annulation (ou issue métier définitive) sauvegardée : on confirme à RabbitMQ, qui peut effacer le message.
             await canal.BasicAckAsync(livraison.DeliveryTag, multiple: false, arret);
@@ -131,6 +135,7 @@ public sealed class ConsommateurReservationEchouee(
         {
             // Échec DÉFINITIF (message illisible, règle métier violée) : le rejouer donnerait le même résultat.
             // requeue: false = RabbitMQ l'abandonne.
+            resultat = "rejete";
             activite?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogWarning(ex, "Message {MessageId} rejeté définitivement", messageId);
             await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: false, arret);
@@ -138,9 +143,14 @@ public sealed class ConsommateurReservationEchouee(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Échec probablement TEMPORAIRE (base indisponible...) : on remet le message dans la file.
+            resultat = "erreur_technique";
             activite?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogError(ex, "Erreur technique sur le message {MessageId}, il sera rejoué", messageId);
             await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: true, arret);
+        }
+        finally
+        {
+            Telemetrie.MessageRecu(resultat, chrono.Elapsed.TotalMilliseconds);
         }
     }
 }

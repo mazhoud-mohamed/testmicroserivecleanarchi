@@ -38,6 +38,7 @@ public sealed class PublicateurOutbox(
                 {
                     // RabbitMQ ou la base indisponible : les messages restent dans l'Outbox, on réessaie au prochain tour.
                     logger.LogError(ex, "Échec de la publication de l'Outbox, nouvel essai au prochain cycle");
+                    Telemetrie.EchecDePublication();
                 }
             }
             while (await minuteur.WaitForNextTickAsync(arret));
@@ -53,6 +54,10 @@ public sealed class PublicateurOutbox(
         // Un scope par cycle : le DbContext est scoped, ce service est un singleton.
         await using var scope = fabriqueScopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CommandeDbContext>();
+
+        // Combien de messages attendent ? Mesuré à chaque cycle (la requête est peu coûteuse grâce à l'index sur TraiteLe).
+        var enAttente = await db.MessagesOutbox.CountAsync(m => m.TraiteLe == null, arret);
+        Telemetrie.DefinirEnAttente(enAttente);
 
         var messages = await db.MessagesOutbox
             .Where(m => m.TraiteLe == null)
@@ -77,6 +82,9 @@ public sealed class PublicateurOutbox(
             await db.SaveChangesAsync(arret);
 
             logger.LogInformation("Message {MessageId} ({Type}) publié depuis l'Outbox", message.Id, message.Type);
+
+            Telemetrie.MessagePublie(message.Type);
+            Telemetrie.DefinirEnAttente(--enAttente);
         }
     }
 }
