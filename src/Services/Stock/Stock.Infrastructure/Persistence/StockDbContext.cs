@@ -32,6 +32,7 @@ public class StockDbContext(DbContextOptions<StockDbContext> options) : DbContex
             b.HasKey(m => m.Id);
             b.Property(m => m.Type).HasMaxLength(200);
             b.Property(m => m.CleRoutage).HasMaxLength(200);
+            b.Property(m => m.TraceParent).HasMaxLength(100); // « traceparent » W3C : 55 caractères
             // Le publicateur cherche en permanence les lignes non traitées : on l'aide avec un index.
             b.HasIndex(m => m.TraiteLe);
         });

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -62,6 +63,13 @@ public sealed class PublicateurOutbox(
 
         foreach (var message in messages)
         {
+            // Un span « producteur » rattaché à la trace d'ORIGINE (celle du traitement qui a écrit le message) :
+            // c'est lui qui recolle les deux morceaux. RabbitMqPublicateur le propage dans les en-têtes du message.
+            using var activite = Telemetrie.Source.StartActivity(
+                $"outbox publish {message.Type}", ActivityKind.Producer, Telemetrie.ContexteDepuis(message.TraceParent));
+            activite?.SetTag("messaging.system", "rabbitmq");
+            activite?.SetTag("messaging.message.id", message.Id.ToString());
+
             await publicateur.PublierAsync(message.Id, message.Type, message.CleRoutage, message.Contenu, arret);
 
             // On marque tout de suite après chaque envoi pour limiter les doublons en cas de plantage.

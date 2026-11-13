@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Stock.Domain.Common;
@@ -21,6 +22,12 @@ public class GestionnaireExceptions(IProblemDetailsService problems, ILogger<Ges
             _ => (0, "")
         };
         if (status == 0) return false;
+
+        // Les détails de l'erreur partent aussi dans le span de la requête : ils apparaissent dans les « Tags » de Jaeger.
+        // OpenTelemetry n'enregistre jamais le corps de la réponse ; c'est donc à nous d'y mettre ce qui aide à comprendre.
+        var activite = Activity.Current;
+        activite?.SetTag("erreur.type", ex.GetType().Name);
+        activite?.SetTag("erreur.motif", titre);
 
         logger.LogWarning("{Methode} {Chemin} refusé ({StatutHttp}) : {Raison}",
             ctx.Request.Method, ctx.Request.Path, status, titre);

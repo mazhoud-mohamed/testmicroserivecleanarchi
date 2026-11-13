@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +17,13 @@ public class FauxPublicateur : IPublicateurMessages
 
     public bool EnPanne { get; set; }
 
+    // TraceId actif au moment de chaque publication : prouve que la trace d'origine a été restaurée par le publicateur.
+    private readonly List<string?> _traceIds = [];
+    public IReadOnlyList<string?> TraceIds
+    {
+        get { lock (_verrou) return _traceIds.ToList(); }
+    }
+
     public IReadOnlyList<(Guid Id, string Type, string Cle, string Contenu)> Publies
     {
         get { lock (_verrou) return _publies.ToList(); }
@@ -24,7 +32,11 @@ public class FauxPublicateur : IPublicateurMessages
     public Task PublierAsync(Guid messageId, string type, string cleRoutage, string contenuJson, CancellationToken ct)
     {
         if (EnPanne) throw new InvalidOperationException("RabbitMQ est en panne (simulé).");
-        lock (_verrou) _publies.Add((messageId, type, cleRoutage, contenuJson));
+        lock (_verrou)
+        {
+            _publies.Add((messageId, type, cleRoutage, contenuJson));
+            _traceIds.Add(Activity.Current?.TraceId.ToString());
+        }
         return Task.CompletedTask;
     }
 }

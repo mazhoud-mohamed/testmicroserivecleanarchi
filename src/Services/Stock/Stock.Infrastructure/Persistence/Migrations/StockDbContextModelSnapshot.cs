@@ -61,6 +61,10 @@ namespace Stock.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreeLe")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<DateTime?>("TraiteLe")
                         .HasColumnType("datetime2");
 

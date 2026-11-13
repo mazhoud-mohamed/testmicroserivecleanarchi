@@ -21,6 +21,8 @@ builder.Services.AddOpenTelemetry()
     .WithTracing(traces =>
     {
         traces
+            // Nos propres spans (publication depuis l'Outbox, réception d'un message) : sans cette ligne, ils sont ignorés.
+            .AddSource(Telemetrie.NomSource)
             .AddAspNetCoreInstrumentation(o =>
             {
                 // Pas de trace pour la documentation de l'API : ce n'est pas du métier, ça noie le reste.
@@ -37,8 +39,14 @@ builder.Services.AddOpenTelemetry()
                 o.Filter = commande => commande is not System.Data.IDbCommand c || !c.CommandText.Contains("[TraiteLe] IS NULL");
             });
 
-        // En développement on affiche les spans dans la console. Plus tard : un vrai outil (Jaeger, Seq...).
-        if (builder.Environment.IsDevelopment())
+        // Envoi des traces à un collecteur (Jaeger) via OTLP, le protocole standard d'OpenTelemetry.
+        // Sans adresse dans la configuration, rien n'est envoyé : l'application ne dépend pas du collecteur.
+        var adresseOtlp = builder.Configuration["OpenTelemetry:Otlp:Endpoint"];
+        if (!string.IsNullOrWhiteSpace(adresseOtlp))
+            traces.AddOtlpExporter(o => o.Endpoint = new Uri(adresseOtlp));
+
+        // Affichage des spans dans la console : utile pour déboguer, mais très verbeux, donc désactivé par défaut.
+        if (builder.Configuration.GetValue<bool>("OpenTelemetry:Console"))
             traces.AddConsoleExporter();
     });
 

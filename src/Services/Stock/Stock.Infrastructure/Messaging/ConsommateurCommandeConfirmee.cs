@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Contrats.Commandes;
 using Microsoft.EntityFrameworkCore;
@@ -103,6 +104,17 @@ public sealed class ConsommateurCommandeConfirmee(
     private async Task TraiterAsync(IChannel canal, BasicDeliverEventArgs livraison, CancellationToken arret)
     {
         var messageId = livraison.BasicProperties.MessageId;
+
+        // Un span « consommateur » rattaché à la trace de l'émetteur (Commande) grâce à l'en-tête « traceparent » du message :
+        // tout ce que fait ce traitement (SQL, logs, message de compensation écrit dans l'Outbox) fait donc partie
+        // de la MÊME trace que la confirmation d'origine.
+        using var activite = Telemetrie.Source.StartActivity(
+            $"{_options.File} process", ActivityKind.Consumer,
+            Telemetrie.ContexteDepuis(Telemetrie.LireTraceParent(livraison.BasicProperties.Headers)));
+        activite?.SetTag("messaging.system", "rabbitmq");
+        activite?.SetTag("messaging.destination.name", _options.File);
+        activite?.SetTag("messaging.message.id", messageId);
+
         try
         {
             var evenement = JsonSerializer.Deserialize<CommandeConfirmeeIntegrationEvent>(livraison.Body.Span)
@@ -125,6 +137,7 @@ public sealed class ConsommateurCommandeConfirmee(
         {
             // Échec DÉFINITIF (message illisible, règle métier violée) : le rejouer donnerait le même résultat.
             // requeue: false = RabbitMQ ne le remet pas dans la file : il l'envoie dans la dead-letter queue.
+            activite?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogWarning(ex, "Message {MessageId} rejeté définitivement", messageId);
             await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: false, arret);
         }
@@ -132,12 +145,14 @@ public sealed class ConsommateurCommandeConfirmee(
         {
             // Quelqu'un a modifié le même article entre notre lecture et notre écriture (RowVersion) : rien n'a été
             // enregistré, c'est un conflit TEMPORAIRE. On remet le message dans la file : le rejeu relira le stock à jour.
+            activite?.SetStatus(ActivityStatusCode.Error, "Conflit de concurrence");
             logger.LogWarning(ex, "Conflit de concurrence sur le message {MessageId}, il sera rejoué", messageId);
             await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: true, arret);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Échec probablement TEMPORAIRE (base indisponible...) : on remet le message dans la file.
+            activite?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogError(ex, "Erreur technique sur le message {MessageId}, il sera rejoué", messageId);
             await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: true, arret);
         }

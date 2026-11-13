@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Commande.Application.Abstractions;
 using Commande.Application.Commandes.Ecriture;
@@ -101,6 +102,16 @@ public sealed class ConsommateurReservationEchouee(
     private async Task TraiterAsync(IChannel canal, BasicDeliverEventArgs livraison, CancellationToken arret)
     {
         var messageId = livraison.BasicProperties.MessageId;
+
+        // Un span « consommateur » rattaché à la trace de l'émetteur (Stock) grâce à l'en-tête « traceparent » du message :
+        // tout ce que fait ce traitement (SQL, logs) fait donc partie de la MÊME trace que la confirmation d'origine.
+        using var activite = Telemetrie.Source.StartActivity(
+            $"{_options.FileStock} process", ActivityKind.Consumer,
+            Telemetrie.ContexteDepuis(Telemetrie.LireTraceParent(livraison.BasicProperties.Headers)));
+        activite?.SetTag("messaging.system", "rabbitmq");
+        activite?.SetTag("messaging.destination.name", _options.FileStock);
+        activite?.SetTag("messaging.message.id", messageId);
+
         try
         {
             var evenement = JsonSerializer.Deserialize<ReservationEchoueeIntegrationEvent>(livraison.Body.Span)
@@ -120,12 +131,14 @@ public sealed class ConsommateurReservationEchouee(
         {
             // Échec DÉFINITIF (message illisible, règle métier violée) : le rejouer donnerait le même résultat.
             // requeue: false = RabbitMQ l'abandonne.
+            activite?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogWarning(ex, "Message {MessageId} rejeté définitivement", messageId);
             await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: false, arret);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Échec probablement TEMPORAIRE (base indisponible...) : on remet le message dans la file.
+            activite?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogError(ex, "Erreur technique sur le message {MessageId}, il sera rejoué", messageId);
             await canal.BasicNackAsync(livraison.DeliveryTag, multiple: false, requeue: true, arret);
         }

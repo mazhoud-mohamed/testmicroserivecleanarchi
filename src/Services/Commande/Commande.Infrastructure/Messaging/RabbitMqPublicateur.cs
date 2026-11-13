@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
@@ -41,7 +42,11 @@ public sealed class RabbitMqPublicateur(IOptions<RabbitMqOptions> options) : IPu
             ContentType = "application/json",
             DeliveryMode = DeliveryModes.Persistent, // le message est écrit sur disque par RabbitMQ
             MessageId = messageId.ToString(),        // permet au consommateur de reconnaître un doublon
-            Type = type                              // indique au consommateur quel type désérialiser
+            Type = type,                             // indique au consommateur quel type désérialiser
+            // Le contexte de trace voyage avec le message : le service qui le reçoit continuera la même trace.
+            Headers = Activity.Current?.Id is { } traceParent
+                ? new Dictionary<string, object?> { [Telemetrie.EnTeteTraceParent] = traceParent }
+                : null
         };
 
         // Dépôt dans l'exchange. Si aucune queue n'est liée à cette clé, le message est jeté :

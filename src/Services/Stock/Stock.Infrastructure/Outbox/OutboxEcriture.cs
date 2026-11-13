@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Contrats;
 using Stock.Application.Abstractions;
@@ -18,7 +19,9 @@ public class OutboxEcriture(StockDbContext db) : IOutbox
             Type = typeof(TEvent).Name,
             CleRoutage = cleRoutage,
             Contenu = JsonSerializer.Serialize(evenement),
-            CreeLe = DateTime.UtcNow
+            CreeLe = DateTime.UtcNow,
+            // Le span en cours (la requête HTTP, ou le traitement d'un message) : on le garde pour continuer la trace.
+            TraceParent = Activity.Current?.Id
         });
     }
 }
