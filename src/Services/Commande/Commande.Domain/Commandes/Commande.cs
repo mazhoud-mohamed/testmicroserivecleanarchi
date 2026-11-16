@@ -52,10 +52,20 @@ public class Commande : AggregateRoot
             _lignes.Select(l => new LigneConfirmee(l.ProduitId, l.Quantite)).ToList()));
     }
 
-    public void Expedier()
+    // Stock a confirmé qu'il a réservé les articles (chemin « aller » de la saga, issue favorable).
+    public void MarquerStockReserve()
     {
         if (Statut != StatutCommande.Confirmee)
-            throw new DomainException("Seule une commande confirmée peut être expédiée.");
+            throw new DomainException(
+                $"Le stock ne peut être marqué réservé que pour une commande confirmée (statut actuel : {Statut}).");
+        Statut = StatutCommande.StockReserve;
+    }
+
+    public void Expedier()
+    {
+        // Confirmee ne suffit plus : tant que Stock n'a pas confirmé, la réservation peut encore échouer.
+        if (Statut != StatutCommande.StockReserve)
+            throw new DomainException("Seule une commande dont le stock est réservé peut être expédiée.");
         Statut = StatutCommande.Expediee;
         AjouterEvenement(new CommandeExpediee(Id, ClientId));
     }

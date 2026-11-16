@@ -37,6 +37,11 @@ public class SagaCommandeIntegrationTests : BaseIntegration
         DansUnScope(sp => sp.GetRequiredService<IHandler<AnnulerCommandeSuiteEchecStock, ResultatAnnulation>>().Handle(
             new AnnulerCommandeSuiteEchecStock(messageId, commandeId, motif), CancellationToken.None));
 
+    // Le message « Stock a réservé » reçu dans un scope neuf, comme dans le consommateur.
+    private Task<ResultatReservationStock> ReussiteDeStock(Guid messageId, Guid commandeId) =>
+        DansUnScope(sp => sp.GetRequiredService<IHandler<MarquerStockReserve, ResultatReservationStock>>().Handle(
+            new MarquerStockReserve(messageId, commandeId), CancellationToken.None));
+
     private Task<(string Statut, string? Motif)> Etat(Guid id) => DansUnScope(async sp =>
     {
         var c = await sp.GetRequiredService<CommandeDbContext>().Commandes.AsNoTracking().SingleAsync(x => x.Id == id);
@@ -138,6 +143,7 @@ public class SagaCommandeIntegrationTests : BaseIntegration
     public async Task Une_commande_deja_expediee_n_est_pas_annulee_mais_le_message_est_marque_traite()
     {
         var id = await CommandeConfirmee();
+        await ReussiteDeStock(Guid.NewGuid(), id); // l'expédition exige un stock réservé
         await Changer(id, ActionCommande.Expedier);
         var messageId = Guid.NewGuid();
 
@@ -146,7 +152,7 @@ public class SagaCommandeIntegrationTests : BaseIntegration
         Assert.Equal(ResultatAnnulation.NonAnnulable, resultat);
         Assert.Equal(("Expediee", null), await Etat(id));
         // Marqué traité : sinon le message serait rejoué indéfiniment sans jamais pouvoir aboutir.
-        Assert.Equal([messageId], await LireInbox());
+        Assert.Contains(messageId, await LireInbox());
     }
 
     [Fact]
@@ -173,6 +179,93 @@ public class SagaCommandeIntegrationTests : BaseIntegration
 
         // Sans transaction commune, la commande serait annulée sans trace : un rejeu l'annulerait « une seconde fois »,
         // ou pire, une annulation partielle serait visible. Ici l'annulation est entièrement défaite.
+        Assert.Equal(("Confirmee", null), await Etat(id));
+        Assert.Empty(await LireInbox());
+    }
+
+    // ---------- Option B : la réussite de Stock rend la commande expédiable ----------
+
+    [Fact]
+    public async Task Une_reussite_de_stock_enregistre_le_statut_StockReserve_et_l_inbox()
+    {
+        var id = await CommandeConfirmee();
+        var messageId = Guid.NewGuid();
+
+        var resultat = await ReussiteDeStock(messageId, id);
+
+        Assert.Equal(ResultatReservationStock.StockReserve, resultat);
+        Assert.Equal(("StockReserve", null), await Etat(id));
+        Assert.Equal([messageId], await LireInbox());
+    }
+
+    [Fact]
+    public async Task Sans_reussite_de_stock_l_expedition_est_refusee_et_rien_n_est_ecrit()
+    {
+        var id = await CommandeConfirmee();
+
+        await Assert.ThrowsAsync<Commande.Domain.Common.DomainException>(() => Changer(id, ActionCommande.Expedier));
+
+        Assert.Equal(("Confirmee", null), await Etat(id));
+    }
+
+    [Fact]
+    public async Task Apres_la_reussite_de_stock_l_expedition_est_acceptee()
+    {
+        var id = await CommandeConfirmee();
+        await ReussiteDeStock(Guid.NewGuid(), id);
+
+        await Changer(id, ActionCommande.Expedier);
+
+        Assert.Equal(("Expediee", null), await Etat(id));
+    }
+
+    [Fact]
+    public async Task Meme_reussite_recue_deux_fois_ne_change_rien_la_seconde_fois()
+    {
+        var id = await CommandeConfirmee();
+        var messageId = Guid.NewGuid();
+
+        var premier = await ReussiteDeStock(messageId, id);
+        var second = await ReussiteDeStock(messageId, id);
+
+        Assert.Equal(ResultatReservationStock.StockReserve, premier);
+        Assert.Equal(ResultatReservationStock.DejaTraite, second);
+        Assert.Single(await LireInbox());
+    }
+
+    [Fact]
+    public async Task Une_commande_annulee_par_le_client_garde_son_statut_quand_la_reussite_arrive()
+    {
+        var id = await CommandeConfirmee();
+        await Changer(id, ActionCommande.Annuler);
+
+        var resultat = await ReussiteDeStock(Guid.NewGuid(), id);
+
+        Assert.Equal(ResultatReservationStock.CommandeAnnulee, resultat);
+        Assert.Equal("Annulee", (await Etat(id)).Statut);
+    }
+
+    [Fact]
+    public async Task Un_echec_de_stock_annule_aussi_une_commande_dont_le_stock_est_deja_marque_reserve()
+    {
+        var id = await CommandeConfirmee();
+        await ReussiteDeStock(Guid.NewGuid(), id);
+
+        var resultat = await Recevoir(Guid.NewGuid(), id);
+
+        Assert.Equal(ResultatAnnulation.Annulee, resultat);
+        Assert.Equal(("Annulee", Motif), await Etat(id));
+    }
+
+    [Fact]
+    public async Task Atomicite_si_l_inbox_echoue_la_commande_n_est_pas_marquee_StockReserve()
+    {
+        var id = await CommandeConfirmee();
+        await Sql("ALTER TABLE MessagesTraites ADD CONSTRAINT CK_RefuseTout CHECK (1 = 0)");
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => ReussiteDeStock(Guid.NewGuid(), id));
+
+        // Sans transaction commune, le statut passerait à StockReserve sans trace : un rejeu referait le travail.
         Assert.Equal(("Confirmee", null), await Etat(id));
         Assert.Empty(await LireInbox());
     }

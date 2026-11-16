@@ -27,7 +27,7 @@ public static class DependencyInjection
 
         // Inbox + consommateur du chemin retour de la saga (messages publiés par Stock).
         services.AddScoped<IMessagesTraites, MessagesTraites>();
-        services.AddHostedService<ConsommateurReservationEchouee>();
+        services.AddHostedService<ConsommateurEvenementsStock>();
         return services;
     }
 }

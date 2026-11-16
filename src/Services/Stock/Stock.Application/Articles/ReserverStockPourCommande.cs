@@ -21,7 +21,8 @@ public enum ResultatReservation
 }
 
 // Réserve le stock de TOUTES les lignes d'une commande, ou d'aucune.
-// En cas de refus, il n'y a ni exception ni message perdu : Stock publie « ReservationEchouee » pour que Commande annule.
+// Dans les deux cas, Stock répond à Commande : « ReservationReussie » (la commande devient expédiable) ou
+// « ReservationEchouee » (la commande est annulée). Il n'y a ni exception ni message perdu.
 public class ReserverStockPourCommandeHandler(
     IStockRepository repository,
     IMessagesTraites messagesTraites,
@@ -79,6 +80,13 @@ public class ReserverStockPourCommandeHandler(
         // ÉTAPE 2b : tout est réservable. Les vérifications ont déjà tout validé, Reserver ne peut plus échouer.
         foreach (var (produitId, quantite) in besoins)
             articles[produitId].Reserver(quantite);
+
+        // On annonce la réussite à Commande : sans ce message, elle ne peut pas savoir que la commande est expédiable.
+        // Il est écrit dans l'Outbox, donc dans la MÊME transaction que les réservations et la trace Inbox :
+        // impossible de réserver sans prévenir, ou de prévenir sans avoir réservé.
+        outbox.Ajouter(
+            new ReservationReussieIntegrationEvent(Guid.NewGuid(), DateTime.UtcNow, demande.CommandeId),
+            ReservationReussieIntegrationEvent.CleRoutage);
 
         // Un seul SaveChanges : les réservations de toutes les lignes sont enregistrées ensemble, ou pas du tout.
         await repository.SauvegarderAsync(ct);

@@ -13,15 +13,15 @@ using RabbitMQ.Client.Events;
 
 namespace Commande.Infrastructure.Messaging;
 
-// CHEMIN RETOUR de la saga : Commande reçoit « la réservation a échoué » publié par Stock.
+// Réponses de Stock dans la saga : Commande reçoit « la réservation a réussi » ou « la réservation a échoué ».
 //
 // BackgroundService = un service qui démarre avec l'application et tourne en arrière-plan.
 // Singleton (le framework le crée une fois) : il ne peut donc pas recevoir directement le handler ou le DbContext
 // (scoped). On ouvre un scope par message avec IServiceScopeFactory, comme ASP.NET le fait pour une requête HTTP.
-public sealed class ConsommateurReservationEchouee(
+public sealed class ConsommateurEvenementsStock(
     IOptions<RabbitMqOptions> options,
     IServiceScopeFactory fabriqueScopes,
-    ILogger<ConsommateurReservationEchouee> logger) : BackgroundService
+    ILogger<ConsommateurEvenementsStock> logger) : BackgroundService
 {
     private readonly RabbitMqOptions _options = options.Value;
 
@@ -80,9 +80,12 @@ public sealed class ConsommateurReservationEchouee(
             arguments: new Dictionary<string, object?> { ["x-dead-letter-exchange"] = echangeMorts },
             cancellationToken: arret);
 
-        // 4. Le binding : « envoie-moi les messages de cet exchange dont la clé est stock.reservation-echouee ».
+        // 4. Les bindings : « envoie-moi les messages de cet exchange dont la clé est l'une de ces deux-là ».
+        // Une file peut avoir plusieurs bindings ; ajouter le second ne modifie pas la file existante.
         await canal.QueueBindAsync(_options.FileStock, _options.ExchangeStock,
             ReservationEchoueeIntegrationEvent.CleRoutage, cancellationToken: arret);
+        await canal.QueueBindAsync(_options.FileStock, _options.ExchangeStock,
+            ReservationReussieIntegrationEvent.CleRoutage, cancellationToken: arret);
 
         // Un seul message non acquitté à la fois : on traite dans l'ordre, sans se faire submerger.
         await canal.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false, cancellationToken: arret);
@@ -90,10 +93,10 @@ public sealed class ConsommateurReservationEchouee(
         var consommateur = new AsyncEventingBasicConsumer(canal);
         consommateur.ReceivedAsync += (_, livraison) => TraiterAsync(canal, livraison, arret);
 
-        // autoAck: false = c'est NOUS qui confirmons (ack) quand l'annulation est sauvegardée.
+        // autoAck: false = c'est NOUS qui confirmons (ack) quand le traitement est sauvegardé.
         await canal.BasicConsumeAsync(_options.FileStock, autoAck: false, consommateur, arret);
-        logger.LogInformation("Commande écoute la file {File} (clé {Cle})", _options.FileStock,
-            ReservationEchoueeIntegrationEvent.CleRoutage);
+        logger.LogInformation("Commande écoute la file {File} (clés {CleEchec} et {CleReussite})", _options.FileStock,
+            ReservationEchoueeIntegrationEvent.CleRoutage, ReservationReussieIntegrationEvent.CleRoutage);
 
         // On reste vivant jusqu'à l'arrêt de l'application ; les messages arrivent via ReceivedAsync.
         await Task.Delay(Timeout.Infinite, arret);
@@ -118,20 +121,20 @@ public sealed class ConsommateurReservationEchouee(
 
         try
         {
-            var evenement = JsonSerializer.Deserialize<ReservationEchoueeIntegrationEvent>(livraison.Body.Span)
-                ?? throw new JsonException("Le message est vide.");
-
-            var demande = new AnnulerCommandeSuiteEchecStock(evenement.EventId, evenement.CommandeId, evenement.Motif);
-
             await using var scope = fabriqueScopes.CreateAsyncScope();
-            var handler = scope.ServiceProvider
-                .GetRequiredService<IHandler<AnnulerCommandeSuiteEchecStock, ResultatAnnulation>>();
-            resultat = (await handler.Handle(demande, arret)).ToString();
+
+            // Les deux messages arrivent dans la même file : la clé de routage dit duquel il s'agit.
+            resultat = livraison.RoutingKey switch
+            {
+                ReservationReussieIntegrationEvent.CleRoutage => await TraiterReussiteAsync(scope.ServiceProvider, livraison, arret),
+                ReservationEchoueeIntegrationEvent.CleRoutage => await TraiterEchecAsync(scope.ServiceProvider, livraison, arret),
+                _ => throw new MessageNonSupporteException(livraison.RoutingKey)
+            };
 
             // Annulation (ou issue métier définitive) sauvegardée : on confirme à RabbitMQ, qui peut effacer le message.
             await canal.BasicAckAsync(livraison.DeliveryTag, multiple: false, arret);
         }
-        catch (Exception ex) when (ex is DomainException or JsonException)
+        catch (Exception ex) when (ex is DomainException or JsonException or MessageNonSupporteException)
         {
             // Échec DÉFINITIF (message illisible, règle métier violée) : le rejouer donnerait le même résultat.
             // requeue: false = RabbitMQ l'abandonne.
@@ -153,4 +156,32 @@ public sealed class ConsommateurReservationEchouee(
             Telemetrie.MessageRecu(resultat, chrono.Elapsed.TotalMilliseconds);
         }
     }
+
+    private static async Task<string> TraiterReussiteAsync(
+        IServiceProvider services, BasicDeliverEventArgs livraison, CancellationToken arret)
+    {
+        var evenement = JsonSerializer.Deserialize<ReservationReussieIntegrationEvent>(livraison.Body.Span)
+            ?? throw new JsonException("Le message est vide.");
+
+        var handler = services.GetRequiredService<IHandler<MarquerStockReserve, ResultatReservationStock>>();
+        var resultat = await handler.Handle(new MarquerStockReserve(evenement.EventId, evenement.CommandeId), arret);
+        return resultat.ToString();
+    }
+
+    private static async Task<string> TraiterEchecAsync(
+        IServiceProvider services, BasicDeliverEventArgs livraison, CancellationToken arret)
+    {
+        var evenement = JsonSerializer.Deserialize<ReservationEchoueeIntegrationEvent>(livraison.Body.Span)
+            ?? throw new JsonException("Le message est vide.");
+
+        var handler = services.GetRequiredService<IHandler<AnnulerCommandeSuiteEchecStock, ResultatAnnulation>>();
+        var resultat = await handler.Handle(
+            new AnnulerCommandeSuiteEchecStock(evenement.EventId, evenement.CommandeId, evenement.Motif), arret);
+        return resultat.ToString();
+    }
+
+    // Message d'une clé de routage que ce consommateur ne connaît pas : échec DÉFINITIF (le rejouer n'y changerait rien),
+    // il part donc en dead-letter queue au lieu de tourner en boucle.
+    private sealed class MessageNonSupporteException(string cle)
+        : Exception($"Clé de routage non supportée : {cle}");
 }

@@ -108,10 +108,11 @@ public class CommandeTests
     }
 
     [Fact]
-    public void Expedier_une_commande_confirmee_leve_CommandeExpediee()
+    public void Expedier_une_commande_dont_le_stock_est_reserve_leve_CommandeExpediee()
     {
         var commande = CommandeAvecUneLigne();
         commande.Confirmer();
+        commande.MarquerStockReserve();
 
         commande.Expedier();
 
@@ -128,6 +129,88 @@ public class CommandeTests
 
         Assert.Equal(StatutCommande.Annulee, commande.Statut);
         Assert.IsType<CommandeAnnulee>(Assert.Single(commande.Evenements));
+    }
+
+    // ---------- Option B de la saga : le stock doit être réservé avant l'expédition ----------
+
+    [Fact]
+    public void Marquer_stock_reserve_fait_passer_une_commande_confirmee_a_StockReserve()
+    {
+        var commande = CommandeAvecUneLigne();
+        commande.Confirmer();
+
+        commande.MarquerStockReserve();
+
+        Assert.Equal(StatutCommande.StockReserve, commande.Statut);
+    }
+
+    [Fact]
+    public void Expedier_une_commande_confirmee_mais_sans_stock_reserve_est_refuse()
+    {
+        var commande = CommandeAvecUneLigne();
+        commande.Confirmer();
+        commande.ViderEvenements();
+
+        var exception = Assert.Throws<DomainException>(commande.Expedier);
+
+        // C'est le trou de l'option A : tant que Stock n'a pas confirmé, la réservation peut encore échouer.
+        Assert.Contains("stock est réservé", exception.Message);
+        Assert.Equal(StatutCommande.Confirmee, commande.Statut);
+        Assert.Empty(commande.Evenements);
+    }
+
+    [Fact]
+    public void Marquer_stock_reserve_avant_confirmation_est_refuse()
+    {
+        var commande = CommandeAvecUneLigne();
+
+        Assert.Throws<DomainException>(commande.MarquerStockReserve);
+        Assert.Equal(StatutCommande.EnAttente, commande.Statut);
+    }
+
+    [Fact]
+    public void Marquer_stock_reserve_deux_fois_est_refuse()
+    {
+        var commande = CommandeAvecUneLigne();
+        commande.Confirmer();
+        commande.MarquerStockReserve();
+
+        Assert.Throws<DomainException>(commande.MarquerStockReserve);
+    }
+
+    [Fact]
+    public void Marquer_stock_reserve_sur_une_commande_annulee_est_refuse()
+    {
+        var commande = CommandeAvecUneLigne();
+        commande.Confirmer();
+        commande.Annuler("Annulée par le client");
+
+        Assert.Throws<DomainException>(commande.MarquerStockReserve);
+        Assert.Equal(StatutCommande.Annulee, commande.Statut);
+    }
+
+    [Fact]
+    public void Une_commande_dont_le_stock_est_reserve_peut_encore_etre_annulee()
+    {
+        var commande = CommandeAvecUneLigne();
+        commande.Confirmer();
+        commande.MarquerStockReserve();
+
+        commande.Annuler("Annulée par le client");
+
+        Assert.Equal(StatutCommande.Annulee, commande.Statut);
+    }
+
+    [Fact]
+    public void Marquer_stock_reserve_ne_leve_aucun_evenement_de_domaine()
+    {
+        var commande = CommandeAvecUneLigne();
+        commande.Confirmer();
+        commande.ViderEvenements();
+
+        commande.MarquerStockReserve();
+
+        Assert.Empty(commande.Evenements);
     }
 
     [Fact]
@@ -179,6 +262,7 @@ public class CommandeTests
     {
         var commande = CommandeAvecUneLigne();
         commande.Confirmer();
+        commande.MarquerStockReserve();
         commande.Expedier();
 
         Assert.Throws<DomainException>(() => commande.Annuler("Motif de test"));

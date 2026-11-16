@@ -50,17 +50,25 @@ public class SagaStockIntegrationTests : BaseIntegration
     // ---------- Réservation réussie ----------
 
     [Fact]
-    public async Task Reservation_reussie_ecrit_le_stock_et_l_inbox_mais_aucun_message()
+    public async Task Reservation_reussie_ecrit_le_stock_l_inbox_et_le_message_de_reussite()
     {
         await Approvisionner(Clavier, 10);
         var messageId = Guid.NewGuid();
+        var commandeId = Guid.NewGuid();
 
-        var resultat = await Recevoir(messageId, Guid.NewGuid(), new LigneAReserver(Clavier, 4));
+        var resultat = await Recevoir(messageId, commandeId, new LigneAReserver(Clavier, 4));
 
         Assert.Equal(ResultatReservation.Reservee, resultat);
         Assert.Equal((6, 4), await Stock(Clavier));
         Assert.Equal([messageId], await LireInbox());
-        Assert.Empty(await LireOutbox());
+
+        var message = Assert.Single(await LireOutbox());
+        Assert.Equal(ReservationReussieIntegrationEvent.CleRoutage, message.CleRoutage);
+        Assert.Equal(nameof(ReservationReussieIntegrationEvent), message.Type);
+        Assert.Null(message.TraiteLe);
+        var evenement = JsonSerializer.Deserialize<ReservationReussieIntegrationEvent>(message.Contenu)!;
+        Assert.Equal(commandeId, evenement.CommandeId);
+        Assert.Equal(message.Id, evenement.EventId);
     }
 
     // ---------- Refus : la compensation part, le stock ne bouge pas ----------
@@ -184,6 +192,24 @@ public class SagaStockIntegrationTests : BaseIntegration
 
         // Si l'Inbox était écrite à part, le message serait marqué « traité » alors que la compensation n'est jamais
         // partie : la commande resterait confirmée pour toujours. Ici, rien n'est enregistré, le message peut être rejoué.
+        Assert.Empty(await LireInbox());
+        Assert.Empty(await LireOutbox());
+    }
+
+    [Fact]
+    public async Task Atomicite_de_la_reussite_si_l_outbox_echoue_le_stock_n_est_pas_reserve()
+    {
+        await Approvisionner(Clavier, 10);
+        // La base REFUSE l'insertion du message de réussite.
+        await Sql("ALTER TABLE MessagesOutbox ADD CONSTRAINT CK_RefuseTout CHECK (CleRoutage <> 'stock.reservation-reussie')");
+        var messageId = Guid.NewGuid();
+
+        await Assert.ThrowsAsync<DbUpdateException>(() =>
+            Recevoir(messageId, Guid.NewGuid(), new LigneAReserver(Clavier, 4)));
+
+        // Réserver sans pouvoir prévenir Commande laisserait la commande bloquée en « Confirmee » à jamais, avec du stock
+        // immobilisé. Ici tout est défait ensemble : le message pourra être rejoué et réussira entièrement.
+        Assert.Equal((10, 0), await Stock(Clavier));
         Assert.Empty(await LireInbox());
         Assert.Empty(await LireOutbox());
     }

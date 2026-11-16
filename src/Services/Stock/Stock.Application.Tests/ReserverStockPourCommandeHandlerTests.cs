@@ -37,7 +37,47 @@ public class ReserverStockPourCommandeHandlerTests
         Assert.Equal(ResultatReservation.Reservee, resultat);
         Assert.Equal((6, 4), _stock.EnBase(Clavier));
         Assert.True(_stock.EstTraite(messageId));
-        Assert.Empty(_stock.Outbox); // une réussite ne publie rien
+        // Une réussite est annoncée à Commande, et SEULEMENT la réussite : jamais un ReservationEchouee en plus.
+        var message = Assert.Single(_stock.Outbox);
+        Assert.Equal(ReservationReussieIntegrationEvent.CleRoutage, message.Cle);
+        Assert.IsType<ReservationReussieIntegrationEvent>(message.Evenement);
+    }
+
+    [Fact]
+    public async Task La_reussite_porte_la_commande_concernee_et_un_identifiant_unique()
+    {
+        _stock.Ajouter(Clavier, 10);
+        var demande = Demande(Guid.NewGuid(), new LigneAReserver(Clavier, 4));
+
+        await _handler.Handle(demande, CancellationToken.None);
+
+        var evenement = Assert.IsType<ReservationReussieIntegrationEvent>(Assert.Single(_stock.Outbox).Evenement);
+        Assert.Equal(demande.CommandeId, evenement.CommandeId);
+        Assert.NotEqual(Guid.Empty, evenement.EventId);
+        Assert.NotEqual(demande.MessageId, evenement.EventId); // c'est un NOUVEAU message, pas le message reçu
+    }
+
+    [Fact]
+    public async Task Une_reussite_et_son_message_sont_enregistres_dans_la_meme_sauvegarde()
+    {
+        _stock.Ajouter(Clavier, 10);
+
+        await _handler.Handle(Demande(Guid.NewGuid(), new LigneAReserver(Clavier, 4)), CancellationToken.None);
+
+        Assert.Equal(1, _stock.NombreSauvegardes);
+        Assert.Single(_stock.Outbox);
+    }
+
+    [Fact]
+    public async Task Rejeu_d_une_reussite_ne_publie_pas_un_second_message()
+    {
+        _stock.Ajouter(Clavier, 10);
+        var demande = Demande(Guid.NewGuid(), new LigneAReserver(Clavier, 4));
+
+        await _handler.Handle(demande, CancellationToken.None);
+        await _handler.Handle(demande, CancellationToken.None);
+
+        Assert.Single(_stock.Outbox);
     }
 
     [Fact]

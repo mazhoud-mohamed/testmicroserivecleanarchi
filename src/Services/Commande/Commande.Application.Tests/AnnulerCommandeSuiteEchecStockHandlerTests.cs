@@ -76,6 +76,7 @@ public class AnnulerCommandeSuiteEchecStockHandlerTests
     public async Task Commande_deja_expediee_n_est_pas_annulee_mais_le_message_est_acquitte()
     {
         var commande = await CommandeConfirmeeAsync();
+        commande.MarquerStockReserve(); // l'expédition exige maintenant un stock réservé
         commande.Expedier();
         var messageId = Guid.NewGuid();
 
